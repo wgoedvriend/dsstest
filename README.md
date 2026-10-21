@@ -1,36 +1,46 @@
-# DSS 6.5: external SD-JWT payload proof of concept
+# DSS 6.5 – VC payload → DSS elektronische zegelservice
 
-This experiment answers one architectural question:
+This repository demonstrates **three separately containerized Java services** with Docker Compose.
 
-> Can another service assemble an unsigned SD-JWT attestation payload as JSON, after which a Java seal service wraps it in a DSSDocument and calls SDJWTService.getDataToSign(DSSDocument, JAdESSignatureParameters)?
+1. **vc-service**: a mock Verifiable Credential payload provider that produces an unsigned JSON claimset, without using DSS.
+2. **orchestrator**: an application that requests the JSON payload and forwards it **unchanged** to the signing service. It provides a step-by-step browser interface.
+3. **dss-service**: receives that JSON and invokes the official `SDJWTService.getDataToSign(DSSDocument, JAdESSignatureParameters)` overload. The service signs with a disposable self-signed RSA key and builds the signed attestation.
 
-## Test flow
+## Follow the flow locally
 
-1. Load the external file `src/test/resources/external-payload.json`. In production its bytes would arrive over HTTP.
-2. Wrap bytes in `new InMemoryDocument(json, "external-payload.json")`.
-3. Call `SDJWTService.getDataToSign(document, params)`.
-4. Sign the returned ToBeSigned bytes with a **throwaway** self-signed RSA test certificate.
-5. Call `SDJWTService.signAttestation(document, params, signature)`.
-6. Verify the resulting compact JWS signature using the public key.
-
-This fixture is a plain claimset, not a complete selectively disclosable SD-JWT. It does **not** test externally supplied _sd hashes, disclosures, issuer trust, wallet interoperability, validity of claims, or a qualified electronic seal.
-
-## Run
-
-Open the **Actions** tab and inspect the **Verify DSS 6.5 external payload** workflow. GitHub Actions generates a temporary PKCS#12 keystore (never committed) and runs `mvn clean test`.
-
-For local runs, install JDK 21 and Maven, then generate the test key:
+Install Docker Desktop with Compose. From the repository root:
 
 ```bash
-keytool -genkeypair -alias test-seal -keyalg RSA -keysize 3072 -sigalg SHA256withRSA -dname "CN=DSS Test Seal,O=Example,C=NL" -validity 2 -storetype PKCS12 -keystore src/test/resources/test-only.p12 -storepass changeit -keypass changeit -noprompt
-mvn clean test
+docker compose up --build
 ```
 
-## Status
+Then open **http://localhost:8080**. Click **Voer ketentest uit** to see each request, the unsigned JSON, DSS signing outcome, and resulting compact token. No real VC provider or external network service is needed.
 
-**Not yet verified green.** The exact DSS 6.5 methods are documented in the official API, but a passing GitHub Actions execution must confirm the integration.
+Alternatively:
 
-- [SDJWTService 6.5 JavaDoc](https://ec.europa.eu/digital-building-blocks/DSS/webapp-demo/apidocs/eu/europa/esig/dss/attestation/sd/jwt/creation/SDJWTService.html)
-- [DSS upstream](https://github.com/esig/dss)
+```bash
+curl -X POST http://localhost:8080/run
+docker compose logs -f vc-service dss-service orchestrator
+docker compose down
+```
 
-Never reuse the example key or password in production. No production signing key belongs in this repository.
+The services are isolated within the Compose backend network. Only the orchestrator is mapped to localhost. See [Architecture and sequence diagram](docs/ARCHITECTURE.md).
+
+## Automated verification
+
+- [GitHub Actions – Container end-to-end](../../actions/workflows/container.yml): builds all containers, invokes the orchestrator and checks for `ok=true`.
+- [GitHub Actions – Unit/integration tests](../../actions/workflows/verify.yml): builds Maven tests using a fresh test certificate.
+
+**Status: committed, but no successful CI run has yet been independently verified.** If CI is red, inspect build logs before treating the prototype as proven.
+
+## What this proves (and what it does not)
+
+This project is designed to demonstrate external JSON → `InMemoryDocument` → `getDataToSign` → signature → `signAttestation` → signature verification.
+
+The mock VC service is **not** a production VC issuer; the sample has no `_sd` disclosures. It does **not** establish SD-JWT-VC profile compatibility, qualified eIDAS sealing, certificate trust, holder binding, or compliance with a real VC service protocol. In particular, a plain signed JWT should not be marketed as a full selectively disclosable Verifiable Credential.
+
+For future extension replace only the mock VC service with an authenticated actual VC API, specify its payload contract (including externally generated disclosures) and add domain-specific validation before sealing.
+
+See the [official DSS 6.5 SDJWTService API](https://ec.europa.eu/digital-building-blocks/DSS/webapp-demo/apidocs/eu/europa/esig/dss/attestation/sd/jwt/creation/SDJWTService.html).
+
+**Security**: the disposable PKCS#12 key inside the Docker image and hardcoded demo password are strictly for local experiments. Do not reuse for production. Keep production private keys in a hardware-backed signing solution or trusted remote signer.
