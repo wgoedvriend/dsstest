@@ -44,18 +44,31 @@ public final class Main {
 
     public static void main(String[] args) throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
-        server.createContext("/health", ex -> send(ex, 200, "application/json", "{\"status\":\"UP\",\"role\":\"" + MODE + "\"}"));
+        server.createContext("/health", wrap(ex -> send(ex, 200, "application/json", "{\"status\":\"UP\",\"role\":\"" + MODE + "\"}")));
         switch (MODE) {
-            case "vc" -> server.createContext("/payload", Main::payload);
-            case "seal" -> server.createContext("/seal", Main::seal);
+            case "vc" -> server.createContext("/payload", wrap(Main::payload));
+            case "seal" -> server.createContext("/seal", wrap(Main::seal));
             case "gateway" -> {
-                server.createContext("/", Main::page);
-                server.createContext("/run", Main::run);
+                server.createContext("/", wrap(Main::page));
+                server.createContext("/run", wrap(Main::run));
             }
             default -> throw new IllegalArgumentException("Unknown MODE " + MODE);
         }
         server.start();
         System.out.println("Ready mode=" + MODE + " on port 8080");
+    }
+
+    @FunctionalInterface
+    interface CheckedHandler { void handle(HttpExchange exchange) throws Exception; }
+
+    private static com.sun.net.httpserver.HttpHandler wrap(CheckedHandler handler) {
+        return exchange -> {
+            try { handler.handle(exchange); }
+            catch (Exception error) {
+                error.printStackTrace();
+                send(exchange, 500, "text/plain", "Internal error: " + error.getClass().getSimpleName());
+            }
+        };
     }
 
     private static void payload(HttpExchange ex) throws Exception {
