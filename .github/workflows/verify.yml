@@ -1,0 +1,19 @@
+name: Verify DSS 6.5 external payload
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Generate disposable local certificate (test only)
+        run: |
+          keytool -genkeypair -alias test-seal -keyalg RSA -keysize 3072 -sigalg SHA256withRSA -dname "CN=DSS Test Seal,O=Example,C=NL" -validity 2 -storetype PKCS12 -keystore src/test/resources/test-only.p12 -storepass changeit -keypass changeit -noprompt
+      - name: Test
+        run: mvn -B --no-transfer-progress clean test
