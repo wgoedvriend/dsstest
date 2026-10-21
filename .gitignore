@@ -1,0 +1,5 @@
+target/
+*.log
+src/test/resources/test-only.p12
+*.jks
+*.p12
