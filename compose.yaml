@@ -1,0 +1,26 @@
+services:
+  vc-service:
+    build: .
+    environment:
+      MODE: vc
+    networks: [backend]
+  dss-service:
+    build: .
+    environment:
+      MODE: seal
+    networks: [backend]
+  orchestrator:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      MODE: gateway
+      VC_URL: http://vc-service:8080/payload
+      SEAL_URL: http://dss-service:8080/seal
+    depends_on:
+      - vc-service
+      - dss-service
+    networks: [backend]
+networks:
+  backend:
+    driver: bridge
